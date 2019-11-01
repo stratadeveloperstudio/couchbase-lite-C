@@ -1,0 +1,44 @@
+cmake_minimum_required (VERSION 2.6)
+project (couchbaselite-playground)
+
+set(TOP ${PROJECT_SOURCE_DIR}/../)
+
+# add_definitions(-DCBL_TESTS)
+
+include_directories(${TOP}C/include/
+                    # ${TOP}test/
+                    ${TOP}vendor/couchbase-lite-core/vendor/fleece/API/
+                    # ${TOP}vendor/couchbase-lite-core/vendor/fleece/vendor/catch/
+                    ${TOP}include/
+                    ${TOP}include/cbl++/
+                    ${PROJECT_BINARY_DIR}/../include/cbl/
+                )
+
+# aux_source_directory(.  TEST_SRC)
+
+# set(TEST_SRC ${TEST_SRC})
+
+# add_executable(CBL_C_Tests ${TEST_SRC} )
+
+add_executable(couchbaselite-playground playground.cpp)
+
+target_link_libraries(couchbaselite-playground PRIVATE  CouchbaseLiteC FleeceStatic)
+
+if(MSVC)
+    set(BIN_TOP "${PROJECT_BINARY_DIR}/../..")
+    set(FilesToCopy ${BIN_TOP}/\$\(Configuration\)/LiteCore
+                    ${BIN_TOP}/\$\(Configuration\)/LiteCoreREST)
+    add_custom_command(TARGET couchbaselite-playground POST_BUILD
+        COMMAND ${CMAKE_COMMAND}
+        -DFilesToCopy="${FilesToCopy}"
+        -DDestinationDirectory=${PROJECT_BINARY_DIR}/\$\(Configuration\)
+        -P ${TOP}MSVC/copy_artifacts.cmake)
+elseif(ANDROID)
+    target_link_libraries(couchbaselite-playground PUBLIC  "log")
+elseif(APPLE AND BUILD_ENTERPRISE)
+    target_link_libraries(couchbaselite-playground PUBLIC  "-framework CoreFoundation"
+                                          "-framework CoreML"
+                                          "-framework Vision")
+elseif(UNIX)
+    target_link_libraries(couchbaselite-playground PUBLIC  "pthread" "${LIBCXX_LIB}" "${LIBCXXABI_LIB}" dl)
+endif()

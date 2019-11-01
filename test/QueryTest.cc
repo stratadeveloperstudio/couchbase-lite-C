@@ -47,15 +47,15 @@ public:
 
 
 TEST_CASE_METHOD(QueryTest, "Invalid Query", "[!throws]") {
-    CBLError error;
-    int errPos;
-    query = CBLQuery_New(db.ref(), kCBLN1QLLanguage,
-                         "SELECT name WHERE",
-                         &errPos, &error);
-    REQUIRE(!query);
-    CHECK(errPos == 17);
-    CHECK(error.domain == CBLDomain);
-    CHECK(error.code == CBLErrorInvalidQuery);
+//    CBLError error;
+//    int errPos;
+//    query = CBLQuery_New(db.ref(), kCBLN1QLLanguage,
+//                         "SELECT name WHERE",
+//                         &errPos, &error);
+//    REQUIRE(!query);
+//    CHECK(errPos == 17);
+//    CHECK(error.domain == CBLDomain);
+//    CHECK(error.code == CBLErrorInvalidQuery);
 }
 
 

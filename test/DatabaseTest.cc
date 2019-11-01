@@ -17,7 +17,7 @@
 //
 
 #include "CBLTest.hh"
-#include "CBLPrivate.h"
+// #include "CBLPrivate.h"
 #include "fleece/Fleece.hh"
 #include "fleece/Mutable.hh"
 #include <string>
@@ -47,7 +47,7 @@ TEST_CASE_METHOD(CBLTest, "Database") {
     CHECK(string(CBLDatabase_Path(db)) == string(kDatabaseDir) + "/" + kDatabaseName + ".cblite2/");
     CHECK(CBL_DatabaseExists(kDatabaseName, kDatabaseDir.c_str()));
     CHECK(CBLDatabase_Count(db) == 0);
-    CHECK(CBLDatabase_LastSequence(db) == 0);       // not public API
+    // CHECK(CBLDatabase_LastSequence(db) == 0);       // not public API
 }
 
 

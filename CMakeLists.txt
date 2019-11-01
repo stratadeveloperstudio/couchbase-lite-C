@@ -13,7 +13,7 @@ project (CouchbaseLite_C)
 set(COMPILE_FLAGS   "${COMPILE_FLAGS}   -Wall -Werror")
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 11)
 option(BUILD_ENTERPRISE "Set whether or not to build enterprise edition" OFF)
@@ -88,6 +88,7 @@ set(
     src/CBLReplicator.cc
     src/Listener.cc
     src/Util.cc
+    src/ConflictResolver.cc
     ${PLATFORM_SRC}
 )
 
@@ -144,4 +145,6 @@ set_dylib_properties()
 
 ### TESTS:
 
-add_subdirectory(test)
+# add_subdirectory(test)
+
+add_subdirectory(examples)
