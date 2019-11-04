@@ -1,6 +1,7 @@
 #include <iostream>
 #include <string>
 #include <thread>
+#include <set>
 
 #include "fleece/Fleece.hh"
 #include "fleece/Mutable.hh"
@@ -8,6 +9,25 @@
 
 using namespace fleece;
 using namespace cbl;
+
+//////////////////////
+// Replicator settings
+const char *rep_url_ = "ws://localhost:4984/db";
+const char *rep_username_ = "";
+const char *rep_password_ = "";
+//////////////////////
+
+void statusChanged(CBLReplicator *r, const CBLReplicatorStatus &status) {
+    std::cout << "--- PROGRESS: status=" << status.activity << ", fraction=" << status.progress.fractionComplete << ", err=" << status.error.domain << "/" << status.error.code << "\n";
+}
+
+void docProgress(CBLReplicator *r, bool isPush, unsigned numDocuments, const CBLReplicatedDocument* documents) {
+    std::cout << "--- " << numDocuments << " docs " << (isPush ? "pushed" : "pulled") << ":";
+    for (unsigned i = 0; i < numDocuments; ++i) {
+        std::cout << " " << documents[i].ID;
+    }
+    std::cout << "\n";
+}
 
 int main() {
 
@@ -47,10 +67,10 @@ int main() {
     // Save document "Doc_2"
     db.saveDocument(doc_2);
 
-    std::cout << "\nSaved documents." << std::endl;
+    std::cout << "Saved documents." << std::endl;
 
-    // Get key count for "Doc_1"
-    std::cout << "\nElements in the database: " << db.count() << std::endl;
+    // Get element count for "Doc_1"
+    std::cout << "Elements in the database: " << db.count() << std::endl;
 
     // Read back the contents of "Doc_1"
     Document d = db.getMutableDocument("Doc_1");
@@ -101,6 +121,46 @@ int main() {
         std::cout << "Name: " << std::string(value_sl) << std::endl;
     }
 
-    return 0;
+    db.close();
 
+    //
+    // Replicator API:
+    //
+
+    Database db_Rep("DB_Rep", {"", kCBLDatabase_Create});
+
+    CBLReplicatorConfiguration config = {};
+    CBLReplicator *repl = nullptr;
+    std::set<std::string> docsNotified;
+
+    config.database = db_Rep.ref();
+    config.replicatorType = kCBLReplicatorTypePull;
+    config.endpoint = CBLEndpoint_NewWithURL(rep_url_);
+    config.authenticator = CBLAuth_NewBasic(rep_password_, rep_username_);
+   
+    repl = CBLReplicator_New(&config, &error);
+
+    auto ctoken = CBLReplicator_AddChangeListener(repl, [](void *context, CBLReplicator *r, const CBLReplicatorStatus *status) {
+        statusChanged(r, *status);
+    }, nullptr);
+
+    auto dtoken = CBLReplicator_AddDocumentListener(repl, [](void *context, CBLReplicator *r, bool isPush, unsigned numDocuments, const CBLReplicatedDocument* documents) {
+        docProgress(r, isPush, numDocuments, documents);
+    }, nullptr);
+
+    CBLReplicator_Start(repl);
+    CBLReplicatorStatus status;
+    while ((status = CBLReplicator_Status(repl)).activity != kCBLReplicatorStopped) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    std::cout << "Finished with activity = " << status.activity << ", error = (" << status.error.domain << "/" << status.error.code << ")\n";
+
+    CBLListener_Remove(ctoken);
+    CBLListener_Remove(dtoken);
+
+    CBLReplicator_Release(repl);
+    CBLAuth_Free(config.authenticator);
+    CBLEndpoint_Free(config.endpoint);
+
+    return 0;
 }
