@@ -1,7 +1,6 @@
 #include <iostream>
 #include <string>
 #include <thread>
-#include <set>
 
 #include "fleece/Fleece.hh"
 #include "fleece/Mutable.hh"
