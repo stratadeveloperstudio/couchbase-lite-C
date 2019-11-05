@@ -17,13 +17,13 @@ const char *rep_username_ = "";
 const char *rep_password_ = "";
 //////////////////////
 
-void statusChanged(CBLReplicator *r, const CBLReplicatorStatus &status) {
+void statusChanged(Replicator r, const CBLReplicatorStatus &status) {
     std::cout << "--- PROGRESS: status=" << status.activity << ", fraction=" << status.progress.fractionComplete << ", err=" << status.error.domain << "/" << status.error.code << "\n";
 }
 
-void docProgress(CBLReplicator *r, bool isPush, unsigned numDocuments, const CBLReplicatedDocument* documents) {
-    std::cout << "--- " << numDocuments << " docs " << (isPush ? "pushed" : "pulled") << ":";
-    for (unsigned i = 0; i < numDocuments; ++i) {
+void docProgress(Replicator r, bool isPush, const std::vector<CBLReplicatedDocument, std::allocator<CBLReplicatedDocument>> documents) {
+    std::cout << "--- " << documents.size() << " docs " << (isPush ? "pushed" : "pulled") << ":";
+    for (unsigned i = 0; i < documents.size(); ++i) {
         std::cout << " " << documents[i].ID;
     }
     std::cout << "\n";
@@ -88,79 +88,91 @@ int main() {
     //
 
     // Get all Document ID's in the current database
-    CBLError error;
-    int errPos;
-    CBLQuery *query = CBLQuery_New(db.ref(), kCBLN1QLLanguage, "SELECT _id", &errPos, &error);
-    CBLResultSet *results = CBLQuery_Execute(query, &error);
+    Query query_1(db, kCBLN1QLLanguage, "SELECT _id");
+    ResultSet results = query_1.execute();
 
-    while (CBLResultSet_Next(results)) {
-        FLValue value = CBLResultSet_ValueAtIndex(results, 0);
-        slice value_sl = FLValue_AsString(value);
+    for(ResultSetIterator it = results.begin(); it != results.end(); ++it) {
+        Result r = *it;
+        slice value_sl = r.valueAtIndex(0).asString();
         std::cout << "Document ID: " << std::string(value_sl) << std::endl;
     }
 
     // Get all keys "Name" that match Jo% (The '%' symbols acts as a wildcard)
     std::string my_query = "SELECT Name WHERE Name LIKE 'Jo%'";
-    query = CBLQuery_New(db.ref(), kCBLN1QLLanguage, my_query.c_str(), &errPos, &error);
-    results = CBLQuery_Execute(query, &error);
+    Query query_2(db, kCBLN1QLLanguage, my_query.c_str());
+    results = query_2.execute();
 
-    while (CBLResultSet_Next(results)) {
-        FLValue value = CBLResultSet_ValueAtIndex(results, 0);
-        slice value_sl = FLValue_AsString(value);
+    for(ResultSetIterator it = results.begin(); it != results.end(); ++it) {
+        Result r = *it;
+        slice value_sl = r.valueAtIndex(0).asString();
         std::cout << "Name: " << std::string(value_sl) << std::endl;
     }
 
     // Get all keys "Name" that match "Age" between 25 and 35
     my_query = "SELECT Name WHERE Age BETWEEN 25 AND 35";
-    query = CBLQuery_New(db.ref(), kCBLN1QLLanguage, my_query.c_str(), &errPos, &error);
-    results = CBLQuery_Execute(query, &error);
+    Query query_3(db, kCBLN1QLLanguage, my_query.c_str());
+    results = query_3.execute();
 
-    while (CBLResultSet_Next(results)) {
-        FLValue value = CBLResultSet_ValueAtIndex(results, 0);
-        slice value_sl = FLValue_AsString(value);
+    for(ResultSetIterator it = results.begin(); it != results.end(); ++it) {
+        Result r = *it;
+        slice value_sl = r.valueAtIndex(0).asString();
         std::cout << "Name: " << std::string(value_sl) << std::endl;
     }
 
+    // Close the database
     db.close();
 
     //
     // Replicator API:
     //
 
+    // Open a database "DB_Rep"
     Database db_Rep("DB_Rep", {"", kCBLDatabase_Create});
 
-    CBLReplicatorConfiguration config = {};
-    CBLReplicator *repl = nullptr;
-    std::set<std::string> docsNotified;
+    ReplicatorConfiguration config(db_Rep);
 
-    config.database = db_Rep.ref();
+    // Set the endpoint URL to connect to
+    config.endpoint.setURL(rep_url_);
+
+    // Set the username and password for authentication
+    config.authenticator.setBasic(rep_username_, rep_password_);
+
+    // Set the replication type (push/pull/push and pull)
     config.replicatorType = kCBLReplicatorTypePull;
-    config.endpoint = CBLEndpoint_NewWithURL(rep_url_);
-    config.authenticator = CBLAuth_NewBasic(rep_password_, rep_username_);
-   
-    repl = CBLReplicator_New(&config, &error);
 
-    auto ctoken = CBLReplicator_AddChangeListener(repl, [](void *context, CBLReplicator *r, const CBLReplicatorStatus *status) {
-        statusChanged(r, *status);
-    }, nullptr);
+    // Set the channels to listen to
+    // MutableArray ma = MutableArray::newArray();
+    // ma.append("chan1");
+    // config.channels = ma;
 
-    auto dtoken = CBLReplicator_AddDocumentListener(repl, [](void *context, CBLReplicator *r, bool isPush, unsigned numDocuments, const CBLReplicatedDocument* documents) {
-        docProgress(r, isPush, numDocuments, documents);
-    }, nullptr);
+    // Set the document ID's to listen to
+    // MutableArray ma2 = MutableArray::newArray();
+    // ma2.append("Doc1_chan1");
+    // config.documentIDs = ma2;
 
-    CBLReplicator_Start(repl);
-    CBLReplicatorStatus status;
-    while ((status = CBLReplicator_Status(repl)).activity != kCBLReplicatorStopped) {
+    Replicator replicator(config);
+
+    // Connect a status changed callback function
+    std::function<void(Replicator, const CBLReplicatorStatus &)> statusChangedCallback = statusChanged;
+    auto ctoken = replicator.addChangeListener(statusChangedCallback);
+
+    // Connect a document progress callback function
+    std::function<void(Replicator, bool, const std::vector<CBLReplicatedDocument, std::allocator<CBLReplicatedDocument>>)> documentCallback = docProgress;
+    auto dtoken = replicator.addDocumentListener(documentCallback);
+
+    // Start replication
+    replicator.start();
+
+    while(replicator.status().activity != kCBLReplicatorStopped) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
-    std::cout << "Finished with activity = " << status.activity << ", error = (" << status.error.domain << "/" << status.error.code << ")\n";
+    std::cout << "Finished with activity = " << replicator.status().activity << ", error = (" << replicator.status().error.domain << "/" << replicator.status().error.code << ")\n";
 
-    CBLListener_Remove(ctoken);
-    CBLListener_Remove(dtoken);
+    // Stop replication
+    replicator.stop();
 
-    CBLReplicator_Release(repl);
-    CBLAuth_Free(config.authenticator);
-    CBLEndpoint_Free(config.endpoint);
+    // Close the database
+    db_Rep.close();
 
     return 0;
 }
