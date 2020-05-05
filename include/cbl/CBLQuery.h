@@ -120,7 +120,8 @@ unsigned CBLQuery_ColumnCount(CBLQuery* _cbl_nonnull) CBLAPI;
     The column name is based on its expression in the `SELECT...` or `WHAT:` section of the
     query. A column that returns a property or property path will be named after that property.
     A column that returns an expression will have an automatically-generated name like `$1`.
-    To give a column a custom name, use the `AS` syntax in the query.*/
+    To give a column a custom name, use the `AS` syntax in the query.
+    Every column is guaranteed to have a unique name. */
 FLSlice CBLQuery_ColumnName(CBLQuery* _cbl_nonnull,
                             unsigned columnIndex) CBLAPI;
 
@@ -135,12 +136,23 @@ FLSlice CBLQuery_ColumnName(CBLQuery* _cbl_nonnull,
     and can be stepped from one result to the next.
 
     It's important to note that the initial position of the iterator is _before_ the first
-    result, so \ref CBLResultSet_Next must be called _first_.
+    result, so \ref CBLResultSet_Next must be called _first_. Example:
+
+    ```
+    CBLResultSet *rs = CBLQuery_Execute(query, &error);
+    assert(rs);
+    while (CBLResultSet_Next(rs) {
+        FLValue aValue = CBLResultSet_ValueAtIndex(rs, 0);
+        ...
+    }
+    CBLResultSet_Release(rs);
+    ```
  */
 
 /** Moves the result-set iterator to the next result.
     Returns false if there are no more results.
     @warning This must be called _before_ examining the first result. */
+_cbl_warn_unused
 bool CBLResultSet_Next(CBLResultSet* _cbl_nonnull) CBLAPI;
 
 /** Returns the value of a column of the current result, given its (zero-based) numeric index.
@@ -202,18 +214,14 @@ CBLListenerToken* CBLQuery_AddChangeListener(CBLQuery* query _cbl_nonnull,
 
 /** Returns the query's _entire_ current result set, after it's been announced via a call to the
     listener's callback.
-    \warning This does _not_ return a new reference (unlike \ref CBLQuery_Execute), and you
-    **must not release the result set!**
-    \note The result set is valid until the next call to \ref CBLQuery_CurrentResults (with the
-    same query and listener) or until you free the listener. If you need to keep it alive longer,
-    retain it yourself.
+    @note  You must release the result set when you're finished with it.
     @param query  The query being listened to.
     @param listener  The query listener that was notified.
     @param error  If the query failed to run, the error will be stored here.
-    @return  The query's current result set, or NULL if the query failed to run. */
-CBLResultSet* CBLQuery_CurrentResults(CBLQuery* query _cbl_nonnull,
-                                      CBLListenerToken *listener _cbl_nonnull,
-                                      CBLError *error) CBLAPI;
+    @return  A new object containing the query's current results, or NULL if the query failed to run. */
+    CBLResultSet* CBLQuery_CopyCurrentResults(CBLQuery* query _cbl_nonnull,
+                                              CBLListenerToken *listener _cbl_nonnull,
+                                              CBLError *error) CBLAPI;
 
 /** @} */
 
