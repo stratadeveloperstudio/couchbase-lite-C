@@ -18,6 +18,7 @@
 
 #pragma once
 #include "CBLBase.h"
+#include "fleece/FLSlice.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,7 +40,7 @@ typedef CBL_OPTIONS(uint32_t, CBLDatabaseFlags) {
     kCBLDatabase_NoUpgrade     = 4,  ///< Disable upgrading an older-version database
 };
 
-/** Encryption algorithms (available only in the Enterprise Edition). */
+/** Database encryption algorithms (available only in the Enterprise Edition). */
 typedef CBL_ENUM(uint32_t, CBLEncryptionAlgorithm) {
     kCBLEncryptionNone = 0,      ///< No encryption (default)
 #ifdef COUCHBASE_ENTERPRISE
@@ -62,8 +63,20 @@ typedef struct CBLEncryptionKey {
 typedef struct {
     const char *directory;                  ///< The parent directory of the database
     CBLDatabaseFlags flags;                 ///< Options for opening the database
-    CBLEncryptionKey encryptionKey;         ///< The database's encryption key (if any)
+    CBLEncryptionKey* encryptionKey;        ///< The database's encryption key (if any)
 } CBLDatabaseConfiguration;
+
+typedef struct {
+    FLString directory;                     ///< The parent directory of the database
+    CBLDatabaseFlags flags;                 ///< Options for opening the database
+    CBLEncryptionKey* encryptionKey;        ///< The database's encryption key (if any)
+} CBLDatabaseConfiguration_s;
+
+
+/** Returns the default database configuration. */
+CBLDatabaseConfiguration CBLDatabaseConfiguration_Default(void);
+
+CBLDatabaseConfiguration_s CBLDatabaseConfiguration_Default_s(void);
 
 /** @} */
 
@@ -81,6 +94,8 @@ typedef struct {
                         absolute or relative path to the database. */
 bool CBL_DatabaseExists(const char* _cbl_nonnull name, const char *inDirectory) CBLAPI;
 
+bool CBL_DatabaseExists_s(FLString name, FLString inDirectory) CBLAPI;
+
 /** Copies a database file to a new location, and assigns it a new internal UUID to distinguish
     it from the original database when replicating.
     @param fromPath  The full filesystem path to the original database (including extension).
@@ -91,6 +106,11 @@ bool CBL_CopyDatabase(const char* _cbl_nonnull fromPath,
                       const CBLDatabaseConfiguration* config,
                       CBLError*) CBLAPI;
 
+bool CBL_CopyDatabase_s(FLString fromPath,
+                        FLString toName,
+                        const CBLDatabaseConfiguration_s* config,
+                        CBLError*) CBLAPI;
+
 /** Deletes a database file. If the database file is open, an error is returned.
     @param name  The database name (without the ".cblite2" extension.)
     @param inDirectory  The directory containing the database. If NULL, `name` must be an
@@ -98,9 +118,13 @@ bool CBL_CopyDatabase(const char* _cbl_nonnull fromPath,
     @param outError  On return, will be set to the error that occurred, or a 0 code if no error.
      @return  True if the database was deleted, false if it doesn't exist or deletion failed.
                 (You can tell the last two cases apart by looking at \p outError.)*/
-bool CBL_DeleteDatabase(const char _cbl_nonnull *name, 
+bool CBL_DeleteDatabase(const char *name _cbl_nonnull,
                         const char *inDirectory,
                         CBLError *outError) CBLAPI;
+
+bool CBL_DeleteDatabase_s(FLString name,
+                          FLString inDirectory,
+                          CBLError *outError) CBLAPI;
 
 /** @} */
 
@@ -125,6 +149,11 @@ CBLDatabase* CBLDatabase_Open(const char *name _cbl_nonnull,
                               const CBLDatabaseConfiguration* config,
                               CBLError* error) CBLAPI;
 
+_cbl_warn_unused
+CBLDatabase* CBLDatabase_Open_s(FLSlice name,
+                                const CBLDatabaseConfiguration_s* config,
+                                CBLError* error) CBLAPI;
+
 /** Closes an open database. */
 bool CBLDatabase_Close(CBLDatabase*, CBLError*) CBLAPI;
 
@@ -148,16 +177,16 @@ bool CBLDatabase_BeginBatch(CBLDatabase* _cbl_nonnull, CBLError*) CBLAPI;
 /** Ends a batch operation. This **must** be called after \ref CBLDatabase_BeginBatch. */
 bool CBLDatabase_EndBatch(CBLDatabase* _cbl_nonnull, CBLError*) CBLAPI;
 
-/** Returns the nearest future time at which a document in this database will expire,
-    or 0 if no documents will expire. */
-CBLTimestamp CBLDatabase_NextDocExpiration(CBLDatabase* _cbl_nonnull) CBLAPI;
+#ifdef COUCHBASE_ENTERPRISE
+/** Encrypts or decrypts a database, or changes its encryption key.
 
-/** Purges all documents whose expiration time has passed.
-    @param db  The database to purge
-    @param error  On failure, the error will be written here.
-    @return  The number of documents purged, or -1 on error. */
-int64_t CBLDatabase_PurgeExpiredDocuments(CBLDatabase* db _cbl_nonnull,
-                                          CBLError* error) CBLAPI;
+    If \p newKey is NULL, or its \p algorithm is \ref kCBLEncryptionNone, the database will be decrypted.
+    Otherwise the database will be encrypted with that key; if it was already encrypted, it will be
+    re-encrypted with the new key.*/
+bool CBLDatabase_Rekey(CBLDatabase* _cbl_nonnull,
+                       const CBLEncryptionKey *newKey,
+                       CBLError* outError) CBLAPI;
+#endif
 
 /** @} */
 

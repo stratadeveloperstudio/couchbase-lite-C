@@ -30,11 +30,7 @@
 #include "fleece/Mutable.hh"
 #include <atomic>
 #include <mutex>
-
-using namespace std;
-using namespace std::placeholders;
-using namespace fleece;
-using namespace cbl_internal;
+#include <algorithm>
 
 
 #define SyncLog(LEVEL, MSG, ...) C4LogToAt(kC4SyncLog, kC4Log ## LEVEL, MSG, ##__VA_ARGS__)
@@ -46,9 +42,9 @@ extern "C" {
 
 static CBLReplicatorStatus external(const C4ReplicatorStatus &c4status) {
     return {
-        CBLReplicatorActivityLevel(c4status.level),
+        CBLReplicatorActivityLevel(min(c4status.level, (C4ReplicatorActivityLevel)kC4Busy)),   // don't expose kC4Stopping
         {
-            c4status.progress.unitsCompleted / max(float(c4status.progress.unitsTotal), 1.0f),
+            c4status.progress.unitsCompleted / std::max(float(c4status.progress.unitsTotal), 1.0f),
             c4status.progress.documentCount
         },
         external(c4status.error)
@@ -64,7 +60,7 @@ public:
     {
         // One-time initialization of network transport:
         static once_flag once;
-        call_once(once, bind(&C4RegisterBuiltInWebSocket));
+        call_once(once, std::bind(&C4RegisterBuiltInWebSocket));
 
         // Set up the LiteCore replicator parameters:
         if (!_conf.validate(external(&_c4status.error)))
@@ -157,7 +153,6 @@ public:
     void resetCheckpoint() {
         LOCK(_mutex);
         _resetCheckpoint = true;
-        _optionsChanged = true;
     }
 
 
@@ -167,9 +162,9 @@ public:
         if (_optionsChanged) {
             c4repl_setOptions(_c4repl, encodeOptions());
             _optionsChanged = false;
-            _resetCheckpoint = false;
         }
-        c4repl_start(_c4repl);
+        c4repl_start(_c4repl, _resetCheckpoint);
+        _resetCheckpoint = false;
     }
 
 
@@ -202,13 +197,17 @@ public:
     }
 
 
-    CBLListenerToken* addChangeListener(CBLReplicatorChangeListener listener, void *context) {
+    Retained<CBLListenerToken> addChangeListener(CBLReplicatorChangeListener listener,
+                                                 void *context)
+    {
         LOCK(_mutex);
         return _changeListeners.add(listener, context);
     }
 
 
-    CBLListenerToken* addDocumentListener(CBLReplicatedDocumentListener listener, void *context) {
+    Retained<CBLListenerToken> addDocumentListener(CBLReplicatedDocumentListener listener,
+                                                   void *context)
+    {
         LOCK(_mutex);
         if (_docListeners.empty())
             _optionsChanged = true;
@@ -221,8 +220,6 @@ private:
         Encoder enc;
         enc.beginDict();
         _conf.writeOptions(enc);
-        if (_resetCheckpoint)
-            enc[slice(kC4ReplicatorResetCheckpoint)] = true;
         if (!_docListeners.empty())
             enc[slice(kC4ReplicatorOptionProgressLevel)] = 1;
         enc.endDict();
@@ -271,9 +268,9 @@ private:
 
     void _documentsEnded(bool pushing, size_t numDocs, const C4DocumentEnded* c4Docs[]) {
         LOCK(_mutex);
-        unique_ptr<vector<CBLReplicatedDocument>> docs;
+        std::unique_ptr<std::vector<CBLReplicatedDocument>> docs;
         if (!_docListeners.empty()) {
-            docs = make_unique<vector<CBLReplicatedDocument>>();
+            docs = std::make_unique<std::vector<CBLReplicatedDocument>>();
             docs->reserve(numDocs);
         }
         for (size_t i = 0; i < numDocs; ++i) {
@@ -282,7 +279,7 @@ private:
                 // Conflict -- start an async resolver task:
                 auto r = new ConflictResolver(_db, _conf.conflictResolver, _conf.context, src);
                 bumpConflictResolverCount(1);
-                r->runAsync( bind(&CBLReplicator::_conflictResolverFinished, this, _1) );
+                r->runAsync( bind(&CBLReplicator::_conflictResolverFinished, this, std::placeholders::_1) );
             } else if (docs) {
                 // Otherwise add to list of changes to notify:
                 CBLReplicatedDocument doc = {};

@@ -16,7 +16,9 @@
 // limitations under the License.
 //
 
+#pragma once
 #include "CBLBlob.h"
+#include "CBLLog.h"
 #include "CBLDatabase_Internal.hh"
 #include "CBLDocument_Internal.hh"
 #include "Internal.hh"
@@ -25,11 +27,6 @@
 #include "c4Document+Fleece.h"
 #include "fleece/Fleece.hh"
 #include "fleece/Mutable.hh"
-
-using namespace std;
-using namespace fleece;
-
-
 
 
 static inline C4ReadStream*  internal(CBLBlobReadStream *reader)  {return (C4ReadStream*)reader;}
@@ -129,7 +126,7 @@ private:
 class CBLNewBlob : public CBLBlob {
 public:
     // Constructor for new blobs, given contents or writer (but not both)
-    CBLNewBlob(const char *contentType,
+    CBLNewBlob(slice contentType,
                slice contents,
                C4WriteStream *writer)
     :CBLBlob()
@@ -165,7 +162,7 @@ public:
             return FLSliceResult(const_cast<alloc_slice&>(_contents));
         } else {
             setError(outError, LiteCoreDomain, kC4ErrorNotFound,
-                     "Can't get streamed blob contents until doc is saved"_sl);
+                     slice("Can't get streamed blob contents until doc is saved"));
             return FLSliceResult{};
         }
     }
@@ -175,7 +172,7 @@ public:
             return CBLBlob::openStream(outError);
         } else {
             setError(outError, LiteCoreDomain, kC4ErrorNotFound,
-                     "Can't stream blob until doc is saved"_sl);
+                     slice("Can't stream blob until doc is saved"));
             return nullptr;
         }
     }
@@ -188,7 +185,7 @@ public:
         if (_contents) {
             if (!c4blob_create(db->blobStore(), _contents, &expectedKey, nullptr, outError))
                 return false;
-            _contents = nullslice;
+            _contents = fleece::nullslice;
         } else {
             assert(_writer);
             if (!c4stream_install(_writer, &expectedKey, outError))

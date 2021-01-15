@@ -19,9 +19,11 @@
 #pragma once
 #include "CBLDatabase.h"
 #include "CBLDocument.h"
+#include "CBLPrivate.h"
 #include "Internal.hh"
 #include "Listener.hh"
 #include "access_lock.hh"
+#include "function_ref.hh"
 
 
 namespace cbl_internal {
@@ -31,7 +33,7 @@ namespace cbl_internal {
 struct CBLDatabase : public CBLRefCounted, public litecore::access_lock<C4Database*> {
 
     CBLDatabase(C4Database* _cbl_nonnull db,
-                const std::string &name_,
+                fleece::slice name_,
                 fleece::slice dir_,
                 CBLDatabaseFlags flags_)
     :access_lock(std::move(db))
@@ -51,16 +53,22 @@ struct CBLDatabase : public CBLRefCounted, public litecore::access_lock<C4Databa
         });
     }
 
+    // Default location for databases. This is platform-dependent.
+    static std::string defaultDirectory();
+
     std::string const name;         // Cached copy so API can return a C string
     std::string const path;         // Cached copy so API can return a C string
     std::string const dir;          // Cached copy so API can return a C string
     CBLDatabaseFlags const flags;
 
-    CBLListenerToken* addListener(CBLDatabaseChangeListener listener _cbl_nonnull,
-                                  void *context);
-    CBLListenerToken* addDocListener(const char *docID _cbl_nonnull,
-                                     CBLDocumentChangeListener listener _cbl_nonnull,
-                                     void *context);
+    Retained<CBLListenerToken> addListener(CBLDatabaseChangeListener _cbl_nonnull,
+                                                   void *ctx);
+    Retained<CBLListenerToken> addListener(CBLDatabaseChangeDetailListener _cbl_nonnull,
+                                                   void *ctx);
+
+    Retained<CBLListenerToken> addDocListener(const char *docID _cbl_nonnull,
+                                                      CBLDocumentChangeListener _cbl_nonnull,
+                                                      void *context);
 
     void notify(Notification n) const   {const_cast<CBLDatabase*>(this)->_notificationQueue.add(n);}
     void sendNotifications()            {_notificationQueue.notifyAll();}
@@ -71,7 +79,7 @@ struct CBLDatabase : public CBLRefCounted, public litecore::access_lock<C4Databa
 
     template <class LISTENER, class... Args>
     void notify(ListenerToken<LISTENER> *listener, Args... args) const {
-        fleece::Retained<ListenerToken<LISTENER>> retained = listener;
+        Retained<ListenerToken<LISTENER>> retained = listener;
         notify([=]() {
             retained->call(args...);
         });
@@ -80,9 +88,11 @@ struct CBLDatabase : public CBLRefCounted, public litecore::access_lock<C4Databa
     C4BlobStore* blobStore() const      {return _blobStore;}
 
 private:
+    friend class CBLURLEndpointListener;
     friend class cbl_internal::CBLLocalEndpoint;
     C4Database* _getC4Database() const;
 
+    Retained<CBLListenerToken> addListener(fleece::function_ref<CBLListenerToken*()>);
     void databaseChanged();
     void callDBListeners();
     void callDocListeners();
@@ -90,6 +100,7 @@ private:
     C4BlobStore* _blobStore;
     C4DatabaseObserver* _observer {nullptr};
     cbl_internal::Listeners<CBLDatabaseChangeListener> _listeners;
+    cbl_internal::Listeners<CBLDatabaseChangeDetailListener> _detailListeners;
     cbl_internal::Listeners<CBLDocumentChangeListener> _docListeners;
     NotificationQueue _notificationQueue;
 };

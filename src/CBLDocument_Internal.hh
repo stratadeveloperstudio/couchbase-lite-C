@@ -26,17 +26,16 @@
 #include "fleece/Mutable.hh"
 #include <unordered_map>
 
-using namespace std;
-using namespace fleece;
-
 class CBLBlob;
 class CBLNewBlob;
 
 
 class CBLDocument : public CBLRefCounted {
+    using RetainedConstDocument = fleece::RetainedConst<CBLDocument>;
+
 public:
     // Construct a new document (not in any database yet)
-    CBLDocument(const char *docID, bool isMutable);
+    CBLDocument(slice docID, bool isMutable);
 
     // Construct on an existing document
     CBLDocument(CBLDatabase *db, const string &docID, bool isMutable, bool allRevisions =false);
@@ -59,7 +58,7 @@ public:
     CBLDatabase* database() const               {return _db;}
     const char* docID() const                   {return _docID.c_str();}
     const char* revisionID() const;
-    C4RevisionFlags revisionFlags() const       {return _c4doc->selectedRev.flags;}
+    C4RevisionFlags revisionFlags() const;
     bool exists() const                         {return _c4doc != nullptr;}
     uint64_t sequence() const                   {return _c4doc ? _c4doc->sequence : 0;}
     bool isMutable() const                      {return _mutable;}
@@ -67,13 +66,13 @@ public:
 
     //---- Properties:
 
-    FLDoc createFleeceDoc() const               {return c4doc_createFleeceDoc(_c4doc);}
+    FLDoc createFleeceDoc() const;
     Dict properties() const;
     MutableDict mutableProperties()             {return properties().asMutable();}
     void setProperties(MutableDict d)           {if (checkMutable(nullptr)) _properties = d;}
 
     char* propertiesAsJSON() const;
-    bool setPropertiesAsJSON(const char *json, C4Error* outError);
+    bool setPropertiesAsJSON(slice json, C4Error* outError);
 
     //---- Save/delete:
 
@@ -87,7 +86,7 @@ public:
         bool deleting = false;
     };
 
-    RetainedConst<CBLDocument> save(CBLDatabase* db _cbl_nonnull,
+    RetainedConstDocument save(CBLDatabase* db _cbl_nonnull,
                                     const SaveOptions&,
                                     C4Error* outError);
 
@@ -127,17 +126,20 @@ private:
     bool checkMutable(C4Error *outError) const;
 
     static CBLNewBlob* findNewBlob(FLDict dict _cbl_nonnull);
-    bool saveBlobs(CBLDatabase *db, C4Error *outError) const;
-    alloc_slice encodeBody(CBLDatabase* _cbl_nonnull, C4Database* _cbl_nonnull, C4Error *outError) const;
-    
+    bool saveBlobs(CBLDatabase *db, bool &outHasBlobs, C4Error *outError) const;
+    alloc_slice encodeBody(CBLDatabase* _cbl_nonnull, C4Database* _cbl_nonnull,
+                           C4RevisionFlags &outRevFlags, C4Error *outError) const;
     using ValueToBlobMap = std::unordered_map<FLDict, Retained<CBLBlob>>;
     using UnretainedValueToBlobMap = std::unordered_map<FLDict, CBLNewBlob*>;
+    using RetainedDatabase = Retained<CBLDatabase>;
+    using RetainedValue = fleece::RetainedValue;
+    using recursive_mutex = std::recursive_mutex;
 
     static UnretainedValueToBlobMap* sNewBlobs;
 
     string const                _docID;                 // Document ID (never empty)
     mutable string              _revID;                 // Revision ID (if no _c4doc)
-    Retained<CBLDatabase> const _db;                    // Database (null for new doc)
+    RetainedDatabase const      _db;                    // Database (null for new doc)
     c4::ref<C4Document> const   _c4doc;                 // LiteCore doc (null for new doc)
     Doc                         _fromJSON;              // Properties read from JSON
     mutable RetainedValue       _properties;            // Properties, initialized lazily

@@ -44,7 +44,7 @@ static void createDocument(CBLDatabase *db, const char *docID,
 
 TEST_CASE_METHOD(CBLTest, "Database") {
     CHECK(string(CBLDatabase_Name(db)) == kDatabaseName);
-    CHECK(string(CBLDatabase_Path(db)) == string(kDatabaseDir) + "/" + kDatabaseName + ".cblite2/");
+    CHECK(string(CBLDatabase_Path(db)) == string(kDatabaseDir) + kPathSeparator + kDatabaseName + ".cblite2" + kPathSeparator);
     CHECK(CBL_DatabaseExists(kDatabaseName, kDatabaseDir.c_str()));
     CHECK(CBLDatabase_Count(db) == 0);
     CHECK(CBLDatabase_LastSequence(db) == 0);       // not public API
@@ -62,12 +62,26 @@ TEST_CASE_METHOD(CBLTest, "Database w/o config") {
     CBLDatabaseConfiguration config = CBLDatabase_Config(defaultdb);
     CHECK(config.directory != nullptr);     // exact value is platform-specific
     CHECK(config.flags == kCBLDatabase_Create);
-    CHECK(config.encryptionKey.algorithm == kCBLEncryptionNone);
+    CHECK(config.encryptionKey == nullptr);
 
     CHECK(CBLDatabase_Delete(defaultdb, &error));
     CBLDatabase_Release(defaultdb);
 
     CHECK(!CBL_DatabaseExists("unconfig", nullptr));
+}
+
+
+TEST_CASE_METHOD(CBLTest, "Missing Document") {
+    const CBLDocument* doc = CBLDatabase_GetDocument(db, "foo");
+    CHECK(doc == nullptr);
+
+    CBLDocument* mdoc = CBLDatabase_GetMutableDocument(db, "foo");
+    CHECK(mdoc == nullptr);
+
+    CBLError err;
+    CHECK(!CBLDatabase_PurgeDocumentByID(db, "foo", &err));
+    CHECK(err.domain == CBLDomain);
+    CHECK(err.code == CBLErrorNotFound);
 }
 
 
@@ -155,6 +169,28 @@ TEST_CASE_METHOD(CBLTest, "Expiration") {
     CHECK(CBLDatabase_GetDocumentExpiration(db, "docX", &error) == 0);
 
     this_thread::sleep_for(chrono::milliseconds(1700));
+    CHECK(CBLDatabase_Count(db) == 1);
+}
+
+
+TEST_CASE_METHOD(CBLTest, "Expiration After Reopen") {
+    createDocument(db, "doc1", "foo", "bar");
+    createDocument(db, "doc2", "foo", "bar");
+    createDocument(db, "doc3", "foo", "bar");
+
+    CBLError error;
+    CBLTimestamp future = CBL_Now() + 2000;
+    CHECK(CBLDatabase_SetDocumentExpiration(db, "doc1", future, &error));
+    CHECK(CBLDatabase_SetDocumentExpiration(db, "doc3", future, &error));
+    CHECK(CBLDatabase_Count(db) == 3);
+
+    // Close & reopen the database:
+    REQUIRE(CBLDatabase_Close(db, &error));
+    CBLDatabase_Release(db);
+    db = CBLDatabase_Open(kDatabaseName, &kDatabaseConfiguration, &error);
+
+    // Now wait for expiration:
+    this_thread::sleep_for(chrono::milliseconds(3000));
     CHECK(CBLDatabase_Count(db) == 1);
 }
 
